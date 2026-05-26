@@ -215,6 +215,11 @@ svg.chart{width:100%;display:block}
 .stat-val{font-size:20px;font-weight:700;letter-spacing:-.5px;margin-bottom:2px}
 .stat-sub{font-size:11px;color:#555570}
 </style>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -275,6 +280,52 @@ svg.chart{width:100%;display:block}
 
 <script>
 // ═══════════════════════════════
+// FIREBASE CONFIG
+// ═══════════════════════════════
+// ЗАМЕНИТЕ ЭТИ ЗНАЧЕНИЯ НА СВОИ ИЗ FIREBASE CONSOLE
+var firebaseConfig = {
+  apiKey: "AIzaSyB34npO0NkojR6h6_iv3oLvgIXeLnwZR9s",
+  authDomain: "tensesfin.firebaseapp.com",
+  projectId: "tensesfin",
+  storageBucket: "tensesfin.firebasestorage.app",
+  messagingSenderId: "194905438732",
+  appId: "1:194905438732:web:370c522fd48af59f578c29"
+};
+var firebaseApp=null,db=null,FIREBASE_READY=false;
+function initFirebase(){
+  try{
+    if(firebaseConfig.apiKey==="YOUR_API_KEY"){return;}
+    firebaseApp=firebase.initializeApp(firebaseConfig);
+    db=firebase.firestore();
+    FIREBASE_READY=true;
+    console.log("Firebase OK");
+  }catch(e){console.log("Firebase err:",e.message);}
+}
+function syncToCloud(){
+  if(!FIREBASE_READY||!CURRENT_USER)return;
+  clearTimeout(syncToCloud._t);
+  syncToCloud._t=setTimeout(function(){
+    db.collection('users').doc(CURRENT_USER).set({
+      txns:DB.txns,cats:DB.cats,budgets:DB.budgets,updatedAt:Date.now()
+    }).catch(function(e){console.log("sync err",e);});
+  },1500);
+}
+function loadFromCloud(cb){
+  if(!FIREBASE_READY||!CURRENT_USER){if(cb)cb(false);return;}
+  db.collection('users').doc(CURRENT_USER).get().then(function(doc){
+    if(doc.exists){
+      var d=doc.data();
+      if(d.txns)DB.txns=d.txns;
+      if(d.cats&&d.cats.length)DB.cats=d.cats;
+      if(d.budgets)DB.budgets=d.budgets;
+      saveDB();if(cb)cb(true);
+    }else{
+      syncToCloud();if(cb)cb(false);
+    }
+  }).catch(function(e){console.log("load err",e);if(cb)cb(false);});
+}
+// ═══════════════════════════════
+// CONSTANTS// ═══════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════
 var ICONS=['🛒','☕','🚗','💊','🛍️','🎮','🏠','📦','💼','💻','🎁','💰','🍕','✈️','📱','🎵','🏋️','📚','🐾','👗','💈','🔧','🎨','🌿','🍺','🎓','💡','🏥','🎯','🚿','⚡','🧴','🏪'];
@@ -400,6 +451,11 @@ function saveDB(){
   lsSet(ukey('txns'), DB.txns);
   lsSet(ukey('cats'), DB.cats);
   lsSet(ukey('budgets'), DB.budgets);
+  // Sync to cloud (non-blocking)
+  if (FIREBASE_READY) {
+    clearTimeout(saveDB._timer);
+    saveDB._timer = setTimeout(function(){ syncToCloud(); }, 1500);
+  }
 }
 
 // ═══════════════════════════════
@@ -876,11 +932,15 @@ function pageSettings(){
     h+='<button class="ia del" onclick="confirmDelCat(\''+cat.id+'\')">✕</button></div>';
   });
 
-  // Sync info
+  // User + logout card
+  var users2=getUsers();
+  var uname=(users2[CURRENT_USER]&&users2[CURRENT_USER].name)||CURRENT_USER;
   h+='<div class="card" style="margin-top:16px">';
-  h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px"><span class="sync-dot"></span>Синхронизация</div>';
-  h+='<div style="font-size:12px;color:#9090b0;line-height:1.6;margin-bottom:12px">Данные сохранены локально в вашем браузере. Для синхронизации между устройствами используйте один логин и откройте приложение через одну ссылку (GitHub Pages).</div>';
-  h+='<div style="font-size:12px;color:#6c63ff;font-weight:600">Текущий пользователь: '+esc(CURRENT_USER)+'</div>';
+  h+='<div style="font-size:13px;font-weight:700;margin-bottom:10px"><span class="sync-dot"></span>Аккаунт</div>';
+  h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">';
+  h+='<div style="width:42px;height:42px;border-radius:50%;background:#6c63ff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0">'+esc(uname.charAt(0).toUpperCase())+'</div>';
+  h+='<div><div style="font-size:14px;font-weight:700">'+esc(uname)+'</div><div style="font-size:12px;color:#555570">@'+esc(CURRENT_USER)+'</div></div></div>';
+  h+='<button onclick="doLogout()" style="width:100%;background:rgba(255,92,122,.12);color:#ff5c7a;border:1px solid rgba(255,92,122,.25);border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">⎋ Выйти из аккаунта</button>';
   h+='</div>';
 
   h+='<div class="danger-zone">';
@@ -1088,12 +1148,19 @@ function render(){renderSidebar();renderMobNav();renderMain();}
 // INIT
 // ═══════════════════════════════
 function startApp(name){
-  loadDB();
+  loadDB(); // load local first for instant start
   document.getElementById('authScreen').style.display='none';
   document.getElementById('appScreen').className='app visible';
   document.getElementById('fab').addEventListener('click',openAddTxn);
   render();
+  // Then try to load fresher data from cloud
+  loadFromCloud(function(loaded){
+    if(loaded) render(); // re-render with cloud data
+  });
 }
+
+// Init Firebase
+initFirebase();
 
 // Check session on load
 if(checkAutoLogin()){
