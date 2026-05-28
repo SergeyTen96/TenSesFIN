@@ -363,7 +363,83 @@ function ukey(k){ return 'tsf_' + CURRENT_USER + '_' + k; }
 function lsGet(k, d){ try{ var v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 
-// Users registry (stored without namespace — global)
+// Users stored in Firestore — works across all devices
+function hashStr(s){
+  var h=0,i,c;
+  for(i=0;i<s.length;i++){c=s.charCodeAt(i);h=((h<<5)-h)+c;h|=0;}
+  return String(h);
+}
+function showAuthErr(msg){
+  var el=document.getElementById('authErr');
+  el.textContent=msg;el.style.display='block';
+}
+function checkAutoLogin(){
+  var saved=lsGet('tsf_session',null);
+  if(saved&&saved.user&&saved.name){CURRENT_USER=saved.user;return saved.name;}
+  return null;
+}
+function switchTab(tab){
+  document.getElementById('loginForm').style.display=tab==='login'?'block':'none';
+  document.getElementById('regForm').style.display=tab==='reg'?'block':'none';
+  document.getElementById('tabLogin').className='auth-tab'+(tab==='login'?' active':'');
+  document.getElementById('tabReg').className='auth-tab'+(tab==='reg'?' active':'');
+  document.getElementById('authErr').style.display='none';
+}
+function doLogin(){
+  var u=(document.getElementById('loginUser').value||'').trim().toLowerCase();
+  var p=document.getElementById('loginPass').value||'';
+  if(!u||!p){showAuthErr('Заполните все поля');return;}
+  if(!FIREBASE_READY){showAuthErr('Нет соединения с сервером');return;}
+  var btn=document.querySelector('#loginForm .auth-btn');
+  btn.textContent='Входим...';btn.disabled=true;
+  db.collection('accounts').doc(u).get().then(function(doc){
+    btn.textContent='Войти';btn.disabled=false;
+    if(!doc.exists){showAuthErr('Пользователь не найден');return;}
+    var data=doc.data();
+    if(data.hash!==hashStr(p)){showAuthErr('Неверный пароль');return;}
+    CURRENT_USER=u;
+    lsSet('tsf_session',{user:u,name:data.name});
+    startApp(data.name);
+  }).catch(function(e){
+    btn.textContent='Войти';btn.disabled=false;
+    showAuthErr('Ошибка: '+e.message);
+  });
+}
+function doRegister(){
+  var u=(document.getElementById('regUser').value||'').trim().toLowerCase();
+  var p=document.getElementById('regPass').value||'';
+  var n=(document.getElementById('regName').value||'').trim();
+  if(!u||!p||!n){showAuthErr('Заполните все поля');return;}
+  if(u.length<3){showAuthErr('Логин минимум 3 символа');return;}
+  if(p.length<4){showAuthErr('Пароль минимум 4 символа');return;}
+  if(!FIREBASE_READY){showAuthErr('Нет соединения с сервером');return;}
+  var btn=document.querySelector('#regForm .auth-btn');
+  btn.textContent='Создаём...';btn.disabled=true;
+  db.collection('accounts').doc(u).get().then(function(doc){
+    if(doc.exists){
+      btn.textContent='Создать аккаунт';btn.disabled=false;
+      showAuthErr('Этот логин уже занят');return;
+    }
+    db.collection('accounts').doc(u).set({name:n,hash:hashStr(p),created:Date.now()}).then(function(){
+      btn.textContent='Создать аккаунт';btn.disabled=false;
+      CURRENT_USER=u;
+      lsSet('tsf_session',{user:u,name:n});
+      startApp(n);
+    }).catch(function(e){
+      btn.textContent='Создать аккаунт';btn.disabled=false;
+      showAuthErr('Ошибка записи: '+e.message);
+    });
+  }).catch(function(e){
+    btn.textContent='Создать аккаунт';btn.disabled=false;
+    showAuthErr('Ошибка: '+e.message);
+  });
+}
+function doLogout(){
+  lsSet('tsf_session',null);
+  CURRENT_USER=null;
+  document.getElementById('authScreen').style.display='flex';
+  document.getElementById('appScreen').className='app';
+}// Users registry (stored without namespace — global)
 function getUsers(){ return lsGet('tsf_users', {}); }
 function saveUsers(u){ lsSet('tsf_users', u); }
 
@@ -933,8 +1009,8 @@ function pageSettings(){
   });
 
   // User + logout card
-  var users2=getUsers();
-  var uname=(users2[CURRENT_USER]&&users2[CURRENT_USER].name)||CURRENT_USER;
+  var _sess=lsGet('tsf_session',{});
+  var uname=_sess.name||CURRENT_USER||'';
   h+='<div class="card" style="margin-top:16px">';
   h+='<div style="font-size:13px;font-weight:700;margin-bottom:10px"><span class="sync-dot"></span>Аккаунт</div>';
   h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">';
@@ -1102,8 +1178,8 @@ function modalConfirm(title,desc,onOk){
 // ═══════════════════════════════
 function renderSidebar(){
   var u=CURRENT_USER||'';
-  var users=getUsers();
-  var name=(users[u]&&users[u].name)||u;
+  var _s=lsGet('tsf_session',{});
+  var name=_s.name||u;
   var av=name.charAt(0).toUpperCase();
   var tabs=[{id:'home',icon:'🏠',label:'Главная'},{id:'ops',icon:'📋',label:'Операции'},{id:'analytics',icon:'📊',label:'Аналитика'},{id:'budget',icon:'🎯',label:'Бюджет'},{id:'settings',icon:'⚙️',label:'Настройки'}];
   var h='<div class="logo">Tens<b>es</b>FIN<span class="logo-sub">личные финансы</span></div>';
@@ -1163,9 +1239,9 @@ function startApp(name){
 initFirebase();
 
 // Check session on load
-if(checkAutoLogin()){
-  var users2=getUsers();
-  startApp(users2[CURRENT_USER]&&users2[CURRENT_USER].name||CURRENT_USER);
+var _savedName = checkAutoLogin();
+if(_savedName){
+  startApp(_savedName);
 }
 
 // Enter key on auth
