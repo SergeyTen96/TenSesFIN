@@ -216,10 +216,6 @@ svg.chart{width:100%;display:block}
 .stat-sub{font-size:11px;color:#555570}
 </style>
 
-<!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -278,7 +274,10 @@ svg.chart{width:100%;display:block}
   <button class="fab" id="fab">＋</button>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
+
 // ═══════════════════════════════
 // FIREBASE CONFIG
 // ═══════════════════════════════
@@ -389,21 +388,28 @@ function doLogin(){
   var u=(document.getElementById('loginUser').value||'').trim().toLowerCase();
   var p=document.getElementById('loginPass').value||'';
   if(!u||!p){showAuthErr('Заполните все поля');return;}
-  if(!FIREBASE_READY){showAuthErr('Нет соединения с сервером');return;}
   var btn=document.querySelector('#loginForm .auth-btn');
   btn.textContent='Входим...';btn.disabled=true;
-  db.collection('users').doc(u).get().then(function(doc){
-    btn.textContent='Войти';btn.disabled=false;
-    if(!doc.exists){showAuthErr('Пользователь не найден');return;}
-    var data=doc.data();
-    if(data.hash!==hashStr(p)){showAuthErr('Неверный пароль');return;}
-    CURRENT_USER=u;
-    lsSet('tsf_session',{user:u,name:data.name});
-    startApp(data.name);
-  }).catch(function(e){
-    btn.textContent='Войти';btn.disabled=false;
-    showAuthErr('Ошибка: '+e.message);
-  });
+  // Wait for Firebase if not ready yet
+  function tryLogin(){
+    if(!db){
+      setTimeout(tryLogin,300);
+      return;
+    }
+    db.collection('users').doc(u).get().then(function(doc){
+      btn.textContent='Войти';btn.disabled=false;
+      if(!doc.exists){showAuthErr('Пользователь не найден');return;}
+      var data=doc.data();
+      if(data.hash!==hashStr(p)){showAuthErr('Неверный пароль');return;}
+      CURRENT_USER=u;
+      lsSet('tsf_session',{user:u,name:data.name});
+      startApp(data.name);
+    }).catch(function(e){
+      btn.textContent='Войти';btn.disabled=false;
+      showAuthErr('Ошибка соединения: '+e.message);
+    });
+  }
+  tryLogin();
 }
 function doRegister(){
   var u=(document.getElementById('regUser').value||'').trim().toLowerCase();
@@ -412,10 +418,11 @@ function doRegister(){
   if(!u||!p||!n){showAuthErr('Заполните все поля');return;}
   if(u.length<3){showAuthErr('Логин минимум 3 символа');return;}
   if(p.length<4){showAuthErr('Пароль минимум 4 символа');return;}
-  if(!FIREBASE_READY){showAuthErr('Нет соединения с сервером');return;}
   var btn=document.querySelector('#regForm .auth-btn');
   btn.textContent='Создаём...';btn.disabled=true;
-  db.collection('users').doc(u).get().then(function(doc){
+  function tryRegister(){
+    if(!db){setTimeout(tryRegister,300);return;}
+    db.collection('users').doc(u).get().then(function(doc){
     if(doc.exists){
       btn.textContent='Создать аккаунт';btn.disabled=false;
       showAuthErr('Этот логин уже занят');return;
@@ -433,6 +440,8 @@ function doRegister(){
     btn.textContent='Создать аккаунт';btn.disabled=false;
     showAuthErr('Ошибка: '+e.message);
   });
+  }
+  tryRegister();
 }
 function doLogout(){
   lsSet('tsf_session',null);
@@ -1421,6 +1430,42 @@ document.addEventListener('keydown',function(e){
     else if(rf&&rf.style.display!=='none')doRegister();
   }
 });
+
+// Make auth functions globally accessible for onclick handlers
+window.switchTab = switchTab;
+window.doLogin = doLogin;
+window.doRegister = doRegister;
+window.doLogout = doLogout;
+window.setPeriod = setPeriod;
+window.setPeriodDate = setPeriodDate;
+window.setSalaryOffset = setSalaryOffset;
+window.setAStart = setAStart;
+window.setAEnd = setAEnd;
+window.openAddTxn = openAddTxn;
+window.openEditTxn = openEditTxn;
+window.openBudget = openBudget;
+window.openCatModal = openCatModal;
+window.confirmDel = confirmDel;
+window.confirmDelCat = confirmDelCat;
+window.setDateQ = setDateQ;
+window.updateCatPreview = updateCatPreview;
+window.submitTxn = submitTxn;
+window.submitCat = submitCat;
+window.submitBudget = submitBudget;
+window.delTxn = delTxn;
+window.delCat = delCat;
+window.resetAll = resetAll;
+window.dragStart = dragStart;
+window.dragHover = dragHover;
+window.dragDrop = dragDrop;
+window.dragEnd = dragEnd;
+window.touchDragStart = touchDragStart;
+window.touchDragMove = touchDragMove;
+window.touchDragEnd = touchDragEnd;
+window.donutHover = donutHover;
+window.donutOut = donutOut;
+window.showBarDetail = showBarDetail;
+window.go = go;
 </script>
 </body>
 </html>
