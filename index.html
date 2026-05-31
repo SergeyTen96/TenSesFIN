@@ -552,11 +552,26 @@ function getCat(id){
 // ═══════════════════════════════
 // PERIOD
 // ═══════════════════════════════
-function salaryPeriod(){
+// offset=0 current, offset=-1 previous, offset=1 next salary period
+function salaryPeriod(offset){
+  offset=offset||0;
   var now=new Date(),d=now.getDate(),m=now.getMonth(),y=now.getFullYear();
+  // Find base period start month
   if(d<10){m--;if(m<0){m=11;y--;}}
+  // Apply offset
+  m+=offset;
+  while(m>11){m-=12;y++;}
+  while(m<0){m+=12;y--;}
   var em=m+1,ey=y;if(em>11){em=0;ey++;}
-  return{start:y+'-'+pad(m+1)+'-10',end:ey+'-'+pad(em+1)+'-09'};
+  var label=MONTHS[m]+' '+y+' — '+MONTHS[em]+' '+ey;
+  return{start:y+'-'+pad(m+1)+'-10',end:ey+'-'+pad(em+1)+'-09',label:label,offset:offset};
+}
+function salaryPeriodLabel(offset){
+  var sp=salaryPeriod(offset);
+  if(offset===0)return'Текущий: '+sp.label;
+  if(offset===-1)return'Прошлый: '+sp.label;
+  if(offset===1)return'Следующий: '+sp.label;
+  return sp.label;
 }
 function periodRange(f){
   var now=new Date(),t=todayStr();
@@ -570,13 +585,15 @@ function periodRange(f){
   if(f==='salary')return salaryPeriod();
   return null;
 }
-function filterTxns(txns,f,cs,ce){
+function filterTxns(txns,f,cs,ce,salaryOffset){
   if(f==='custom'){
     if(!cs||!ce)return txns;
     var s=cs<ce?cs:ce,e=cs<ce?ce:cs;
     return txns.filter(function(t){return t.date>=s&&t.date<=e;});
   }
-  var r=periodRange(f);
+  var r;
+  if(f==='salary'){r=salaryPeriod(salaryOffset||0);}
+  else{r=periodRange(f);}
   if(!r)return txns;
   return txns.filter(function(t){return t.date>=r.start&&t.date<=r.end;});
 }
@@ -597,7 +614,7 @@ function periodLabel(f,cs,ce){
     var now2=new Date();
     return '1 '+MONTHS_F[now2.getMonth()]+' '+now2.getFullYear()+' — '+formatDate(todayStr());
   }
-  if(f==='salary'){var sp=salaryPeriod();return formatDate(sp.start)+' — '+formatDate(sp.end);}
+  if(f==='salary'){var sp=salaryPeriod(arguments[3]||0);return formatDate(sp.start)+' — '+formatDate(sp.end);}
   if(f==='all')return 'Все данные';
   if(f==='custom'){
     if(!cs||!ce)return 'Выберите даты';
@@ -693,8 +710,16 @@ function donut(slices,sz){
   sz=sz||160;var cx=sz/2,cy=sz/2,R=sz*.4,r=sz*.25;
   var total=0;slices.forEach(function(s){total+=s.value;});
   if(!total)return '';
-  var angle=-Math.PI/2,s='<svg width="'+sz+'" height="'+sz+'">';
-  slices.forEach(function(sl){
+  var angle=-Math.PI/2;
+  var uid='donut_'+Date.now();
+  var s='<svg width="'+sz+'" height="'+sz+'" id="'+uid+'" style="overflow:visible">';
+  // tooltip element
+  s+='<g id="'+uid+'_tip" style="display:none;pointer-events:none">';
+  s+='<rect id="'+uid+'_tr" rx="6" fill="#1a1a28" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>';
+  s+='<text id="'+uid+'_tn" font-size="14" font-family="sans-serif" fill="#f0f0ff" font-weight="700"/>';
+  s+='<text id="'+uid+'_tv" font-size="12" font-family="sans-serif" fill="#9090b0"/>';
+  s+='</g>';
+  slices.forEach(function(sl,si){
     var a=sl.value/total*Math.PI*2;
     if(a<0.01){angle+=a;return;}
     var x1=cx+R*Math.cos(angle),y1=cy+R*Math.sin(angle);
@@ -702,38 +727,93 @@ function donut(slices,sz){
     var ix1=cx+r*Math.cos(angle),iy1=cy+r*Math.sin(angle);
     var ix2=cx+r*Math.cos(angle+a),iy2=cy+r*Math.sin(angle+a);
     var lg=a>Math.PI?1:0;
-    s+='<path d="M '+x1+' '+y1+' A '+R+' '+R+' 0 '+lg+' 1 '+x2+' '+y2+' L '+ix2+' '+iy2+' A '+r+' '+r+' 0 '+lg+' 0 '+ix1+' '+iy1+' Z" fill="'+sl.color+'"/>';
+    var pct=Math.round(sl.value/total*100);
+    var safeN=sl.name.replace(/'/g,'&apos;');
+    var safeV='\u20b8'+fmt(sl.value)+' ('+pct+'%)';
+    s+='<path d="M '+x1+' '+y1+' A '+R+' '+R+' 0 '+lg+' 1 '+x2+' '+y2+' L '+ix2+' '+iy2+' A '+r+' '+r+' 0 '+lg+' 0 '+ix1+' '+iy1+' Z"';
+    s+=' fill="'+sl.color+'" style="cursor:pointer;transition:opacity .15s"';
+    s+=' data-n="'+esc(sl.name)+'" data-v="\u20b8'+fmt(sl.value)+' ('+pct+'%)"';
+    s+=' onmouseenter="donutHover(this,\''+uid+'\')" onmouseleave="donutOut(\''+uid+'\')"';
+    s+='/>';
     angle+=a;
   });
-  return s+'</svg>';
+  s+='</svg>';
+  return s;
+}
+function donutHover(path,uid){
+  path.style.opacity='0.75';
+  path.style.transform='scale(1.03)';
+  path.style.transformOrigin='center';
+  var tip=document.getElementById(uid+'_tip');
+  var tr=document.getElementById(uid+'_tr');
+  var tn=document.getElementById(uid+'_tn');
+  var tv=document.getElementById(uid+'_tv');
+  if(!tip)return;
+  var n=path.dataset.n,v=path.dataset.v;
+  tn.textContent=n; tv.textContent=v;
+  var nw=Math.max(n.length,v.length)*8+16;
+  tn.setAttribute('x',8); tn.setAttribute('y',20);
+  tv.setAttribute('x',8); tv.setAttribute('y',36);
+  tr.setAttribute('width',nw); tr.setAttribute('height',46);
+  tip.setAttribute('transform','translate(5,'+-10+')');
+  tip.style.display='';
+}
+function donutOut(uid){
+  var tip=document.getElementById(uid+'_tip');
+  if(tip)tip.style.display='none';
+  document.querySelectorAll('#'+uid+' path').forEach(function(p){p.style.opacity='1';p.style.transform='';});
 }
 
 // ═══════════════════════════════
 // PERIOD WIDGET
 // ═══════════════════════════════
-function periodWidget(f,cs,ce,prefix){
+function periodWidget(f,cs,ce,prefix,salaryOffset){
+  salaryOffset=salaryOffset||0;
   var chips=[{v:'today',l:'День'},{v:'week',l:'Неделя'},{v:'month',l:'Месяц'},{v:'salary',l:'🗓 Зарплата'},{v:'all',l:'Всё время'},{v:'custom',l:'Свой период'}];
-  var info=periodLabel(f,cs,ce);
+  var sp=salaryPeriod(salaryOffset);
+  var info=f==='salary'?(formatDate(sp.start)+' — '+formatDate(sp.end)):periodLabel(f,cs,ce);
   var h='<div class="period-wrap">';
   h+='<div class="period-top"><span class="period-head">📅 Период</span>';
   if(info)h+='<span class="period-info">'+esc(info)+'</span>';
   h+='</div><div class="chips">';
   chips.forEach(function(c){h+='<button class="chip'+(f===c.v?' active':'')+'" onclick="setPeriod(\''+prefix+'\',\''+c.v+'\')">'+c.l+'</button>';});
   h+='</div>';
+  // Salary navigator
+  if(f==='salary'){
+    var prevLabel=salaryPeriodLabel(salaryOffset-1);
+    var currLabel=salaryOffset===0?'Текущий':salaryOffset===-1?'Прошлый':salaryOffset===1?'Следующий':'Период '+(salaryOffset>0?'+':'')+salaryOffset;
+    var nextLabel=salaryPeriodLabel(salaryOffset+1);
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-top:10px">';
+    h+='<button onclick="setSalaryOffset(\''+prefix+'\','+(salaryOffset-1)+')" style="background:#1a1a28;border:1px solid rgba(255,255,255,.1);color:#9090b0;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">◀</button>';
+    h+='<div style="flex:1;text-align:center">';
+    h+='<div style="font-size:12px;font-weight:700;color:'+(salaryOffset===0?'#6c63ff':salaryOffset>0?'#ffb84d':'#9090b0')+'">'+currLabel+'</div>';
+    h+='<div style="font-size:11px;color:#555570;margin-top:2px">'+esc(sp.label)+'</div>';
+    h+='</div>';
+    h+='<button onclick="setSalaryOffset(\''+prefix+'\','+(salaryOffset+1)+')" style="background:#1a1a28;border:1px solid rgba(255,255,255,.1);color:#9090b0;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">▶</button>';
+    h+='</div>';
+  }
   if(f==='custom'){
     h+='<div class="date-range"><input type="date" class="date-inp" value="'+(cs||'')+'" onchange="setPeriodDate(\''+prefix+'\',\'cs\',this.value)"><span style="color:#444460">—</span><input type="date" class="date-inp" value="'+(ce||'')+'" onchange="setPeriodDate(\''+prefix+'\',\'ce\',this.value)"></div>';
   }
   return h+'</div>';
 }
+function setSalaryOffset(prefix,offset){
+  if(prefix==='d')S.dSalaryOffset=offset;
+  else if(prefix==='a')S.aSalaryOffset=offset;
+  else if(prefix==='b')S.bSalaryOffset=offset;
+  else if(prefix==='o')S.oSalaryOffset=offset;
+  render();
+}
 
 function setPeriod(p,v){
-  if(p==='d')S.dPeriod=v; else if(p==='a')S.aPeriod=v; else if(p==='b')S.bPeriod=v;
+  if(p==='d')S.dPeriod=v; else if(p==='a')S.aPeriod=v; else if(p==='b')S.bPeriod=v; else if(p==='o')S.oPeriod=v;
   render();
 };
 function setPeriodDate(p,f,v){
   if(p==='d'){if(f==='cs')S.dCs=v;else S.dCe=v;}
   else if(p==='a'){if(f==='cs')S.aCs=v;else S.aCe=v;}
   else if(p==='b'){if(f==='cs')S.bCs=v;else S.bCe=v;}
+  else if(p==='o'){if(f==='cs')S.oCs=v;else S.oCe=v;}
   render();
 };
 
@@ -742,14 +822,14 @@ function setPeriodDate(p,f,v){
 // ═══════════════════════════════
 var S={
   tab:'home',modal:null,
-  dPeriod:'salary',dCs:todayStr(),dCe:todayStr(),
-  oFilter:'all',oSearch:'',
-  aPeriod:'salary',aCs:todayStr(),aCe:todayStr(),aRange:29,aRangeStart:0,aRangeEnd:27,
-  bPeriod:'salary',bCs:todayStr(),bCe:todayStr(),
+  dPeriod:'salary',dCs:todayStr(),dCe:todayStr(),dSalaryOffset:0,
+  oFilter:'all',oSearch:'',oPeriod:'salary',oSalaryOffset:0,oCs:todayStr(),oCe:todayStr(),
+  aPeriod:'salary',aCs:todayStr(),aCe:todayStr(),aRange:29,aRangeStart:0,aRangeEnd:27,aSalaryOffset:0,
+  bPeriod:'salary',bCs:todayStr(),bCe:todayStr(),bSalaryOffset:0,
   dragIdx:null,dragOver:null,
   mType:'expense',mAmt:'',mCatId:'',mPayment:'kaspi',mDate:todayStr(),mDateQ:'today',mNote:'',mIncCat:'salary',mEditId:null,
   mcName:'',mcIcon:'📦',mcColor:'#6c63ff',mcEditId:null,
-  mbCatId:null,mbVal:''
+  mbCatId:null,mbVal:'',mbBudgetKey:null
 };
 
 function go(tab){S.tab=tab;render();}
@@ -760,7 +840,7 @@ function closeModal(){S.modal=null;var o=document.getElementById('moverlay');if(
 // PAGES
 // ═══════════════════════════════
 function pageDashboard(){
-  var txns=filterTxns(DB.txns,S.dPeriod,S.dCs,S.dCe);
+  var txns=filterTxns(DB.txns,S.dPeriod,S.dCs,S.dCe,S.dSalaryOffset);
   var exp=txns.filter(function(t){return t.payment!=='income';});
   var inc=txns.filter(function(t){return t.payment==='income';});
   var totalE=exp.reduce(function(s,t){return s+t.amount;},0);
@@ -773,9 +853,12 @@ function pageDashboard(){
   var now=new Date(),hh=now.getHours();
   var gr=hh<6?'Доброй ночи 🌙':hh<12?'Доброе утро 🌅':hh<18?'Добрый день ☀️':'Добрый вечер 🌆';
 
+  var nowD=new Date();
+  var dateStr=nowD.getDate()+' '+MONTHS[nowD.getMonth()]+' '+nowD.getFullYear();
   var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
   h+='<div style="font-size:22px;font-weight:800;letter-spacing:-.5px">TenSesFIN</div>';
-  h+='<div style="font-size:13px;color:#9090b0">'+gr+'</div></div>';
+  h+='<div style="text-align:right"><div style="font-size:13px;color:#9090b0">'+gr+'</div><div style="font-size:12px;color:#555570;margin-top:2px">'+dateStr+'</div></div>';
+  h+='</div>';
 
   // Balance
   h+='<div class="balance-card">';
@@ -786,7 +869,7 @@ function pageDashboard(){
   h+='<div class="bal-sub"><div class="bal-sub-label">Расходы</div><div class="bal-sub-val">₸'+fmt(totalE)+'</div></div>';
   h+='</div></div>';
 
-  h+=periodWidget(S.dPeriod,S.dCs,S.dCe,'d');
+  h+=periodWidget(S.dPeriod,S.dCs,S.dCe,'d',S.dSalaryOffset);
 
   // Payment cards — equal height with flex
   h+='<div class="section-label">По картам</div>';
@@ -795,11 +878,7 @@ function pageDashboard(){
   h+='<div class="payment-card"><span class="payment-badge badge-freedom">🟢 Freedom</span><div class="payment-amount" style="color:#00b464">₸'+fmt(freeAmt)+'</div><div class="payment-sub">'+freeCnt+' операций</div></div>';
   h+='</div>';
 
-  // Chart — only expenses, no income
-  var days14=buildDays(14);
-  h+='<div class="chart-wrap"><div class="chart-title">Расходы за 14 дней</div>';
-  h+=lineChart(days14,['exp'],['#ff5c7a'],130);
-  h+='</div>';
+
 
   // Category breakdown
   var catMap={};
@@ -831,7 +910,7 @@ function pageDashboard(){
   }
 
   // Recent txns
-  var recent=DB.txns.slice(0,8);
+  var recent=txns.slice(0,10);
   if(recent.length){
     h+='<div class="section-label" style="margin-top:4px">Последние операции</div>';
     h+='<div class="chart-wrap">';
@@ -860,13 +939,14 @@ function pageDashboard(){
 }
 
 function pageOps(){
-  var txns=DB.txns;
+  var txns=filterTxns(DB.txns,S.oPeriod,S.oCs,S.oCe,S.oSalaryOffset);
   if(S.oFilter!=='all')txns=txns.filter(function(t){return t.payment===S.oFilter;});
   if(S.oSearch.trim()){
     var q=S.oSearch.toLowerCase();
     txns=txns.filter(function(t){var c=getCat(t.catId);return c.name.toLowerCase().indexOf(q)>-1||(t.note||'').toLowerCase().indexOf(q)>-1;});
   }
-  var h='<div class="page-title">Операции <span style="font-size:15px;color:#555570;font-weight:500">'+DB.txns.length+' записей</span></div>';
+  var h='<div class="page-title">Операции <span style="font-size:15px;color:#555570;font-weight:500">'+txns.length+' из '+DB.txns.length+'</span></div>';
+  h+=periodWidget(S.oPeriod,S.oCs,S.oCe,'o',S.oSalaryOffset);
   h+='<div class="search-wrap"><span class="search-ico">🔍</span><input class="search-inp" placeholder="Поиск..." value="'+esc(S.oSearch)+'" oninput="S.oSearch=this.value;renderMain()"></div>';
   h+='<div class="filter-row">';
   [['all','Все'],['kaspi','Kaspi'],['freedom','Freedom'],['income','Доходы']].forEach(function(p){
@@ -892,7 +972,7 @@ function pageOps(){
 }
 
 function pageAnalytics(){
-  var txns=filterTxns(DB.txns,S.aPeriod,S.aCs,S.aCe);
+  var txns=filterTxns(DB.txns,S.aPeriod,S.aCs,S.aCe,S.aSalaryOffset);
   var exp=txns.filter(function(t){return t.payment!=='income';});
   var inc=txns.filter(function(t){return t.payment==='income';});
   var totalE=exp.reduce(function(s,t){return s+t.amount;},0);
@@ -905,7 +985,7 @@ function pageAnalytics(){
   var chartDays=allDays.slice(startIdx, endIdx+1);
 
   var h='<div class="page-title">Аналитика</div>';
-  h+=periodWidget(S.aPeriod,S.aCs,S.aCe,'a');
+  h+=periodWidget(S.aPeriod,S.aCs,S.aCe,'a',S.aSalaryOffset);
   h+='<div class="grid4">';
   [{l:'Доходы',v:'₸'+fmt(totalI),s:inc.length+' оп.',c:'#00d4a0'},
    {l:'Расходы',v:'₸'+fmt(totalE),s:exp.length+' оп.',c:'#ff5c7a'},
@@ -930,9 +1010,9 @@ function pageAnalytics(){
   h+='</div></div>';
   h+='<div class="legend" style="margin-top:8px"><div class="legend-item"><div class="legend-dot" style="background:#e8382a"></div>Kaspi</div><div class="legend-item"><div class="legend-dot" style="background:#00b464"></div>Freedom</div></div></div>';
 
-  h+='<div class="chart-wrap"><div class="chart-title">Расходы vs Доходы</div>';
-  h+=lineChart(chartDays,['exp','inc'],['#ff5c7a','#00d4a0'],130);
-  h+='<div class="legend"><div class="legend-item"><div class="legend-dot" style="background:#ff5c7a"></div>Расходы</div><div class="legend-item"><div class="legend-dot" style="background:#00d4a0"></div>Доходы</div></div></div>';
+  h+='<div class="chart-wrap"><div class="chart-title">Расходы по дням</div>';
+  h+=lineChart(chartDays,['exp'],['#ff5c7a'],130);
+  h+='<div class="legend"><div class="legend-item"><div class="legend-dot" style="background:#ff5c7a"></div>Расходы</div></div></div>';
 
   var catMap={};exp.forEach(function(t){catMap[t.catId]=(catMap[t.catId]||0)+t.amount;});
   var slices=Object.keys(catMap).map(function(id){var c=DB.cats.find(function(x){return x.id===id;})||{color:'#9090b0',name:'Прочее'};return{color:c.color,name:c.name,value:catMap[id]};}).sort(function(a,b){return b.value-a.value;});
@@ -948,12 +1028,17 @@ function pageAnalytics(){
 }
 
 function pageBudget(){
-  var txns=filterTxns(DB.txns,S.bPeriod,S.bCs,S.bCe).filter(function(t){return t.payment!=='income';});
+  var _bsp=salaryPeriod(S.bSalaryOffset);
+  var _bPeriodKey=S.bPeriod==='salary'?(_bsp.start+'_'+_bsp.end):'all';
+  var txns=filterTxns(DB.txns,S.bPeriod,S.bCs,S.bCe,S.bSalaryOffset).filter(function(t){return t.payment!=='income';});
   var catSpend={};txns.forEach(function(t){catSpend[t.catId]=(catSpend[t.catId]||0)+t.amount;});
   var totalSpent=txns.reduce(function(s,t){return s+t.amount;},0);
-  var totalBudget=DB.cats.reduce(function(s,c){return s+(DB.budgets[c.id]||0);},0);
+  var totalBudget=DB.cats.reduce(function(s,c){
+    var bk=(_bPeriodKey!=='all')?(c.id+'_'+_bPeriodKey):c.id;
+    return s+(DB.budgets[bk]||0);
+  },0);
   var h='<div class="page-title">Бюджет</div>';
-  h+=periodWidget(S.bPeriod,S.bCs,S.bCe,'b');
+  h+=periodWidget(S.bPeriod,S.bCs,S.bCe,'b',S.bSalaryOffset);
   h+='<div class="card" style="margin-bottom:14px">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-size:14px;font-weight:700">Общий бюджет</span>';
   if(totalBudget>0){var tp=Math.round(totalSpent/totalBudget*100);h+='<span style="font-size:12px;font-weight:700;color:'+(totalSpent>totalBudget?'#ff5c7a':tp>80?'#ffb84d':'#00d4a0')+'">'+tp+'%</span>';}
@@ -967,7 +1052,8 @@ function pageBudget(){
   }
   h+='</div><div style="font-size:11px;color:#444460;margin-bottom:10px">Нажмите на категорию чтобы задать лимит</div>';
   DB.cats.forEach(function(cat){
-    var limit=DB.budgets[cat.id]||0,spent=catSpend[cat.id]||0;
+    var _bk=(_bPeriodKey!=='all')?cat.id+'_'+_bPeriodKey:cat.id;
+    var limit=DB.budgets[_bk]||0,spent=catSpend[cat.id]||0;
     var pct=limit?Math.min(Math.round(spent/limit*100),100):0,over=limit>0&&spent>limit;
     var bc=over?'#ff5c7a':pct>80?'#ffb84d':cat.color;
     h+='<div class="bud-item'+(over?' over':'')+'" onclick="openBudget(\''+cat.id+'\')">';
@@ -1076,7 +1162,14 @@ function openAddTxn(){
   S.mDate=todayStr();S.mDateQ='today';S.mNote='';S.mIncCat='salary';
   openModal('txn');
 };
-function openBudget(catId){S.mbCatId=catId;S.mbVal=String(DB.budgets[catId]||'');openModal('budget');};
+function openBudget(catId){
+  S.mbCatId=catId;
+  var sp=salaryPeriod(S.bSalaryOffset);
+  var bk=S.bPeriod==='salary'?(catId+'_'+sp.start+'_'+sp.end):catId;
+  S.mbBudgetKey=bk;
+  S.mbVal=String(DB.budgets[bk]||(DB.budgets[catId]||''));
+  openModal('budget');
+};
 function openCatModal(id){
   if(id){var c=DB.cats.find(function(x){return x.id===id;});if(!c)return;S.mcEditId=id;S.mcName=c.name;S.mcIcon=c.icon;S.mcColor=c.color;}
   else{S.mcEditId=null;S.mcName='';S.mcIcon='📦';S.mcColor='#6c63ff';}
@@ -1111,7 +1204,8 @@ function submitCat(){
 };
 function submitBudget(){
   var v=parseFloat(S.mbVal);if(isNaN(v)||v<0)return;
-  DB.budgets[S.mbCatId]=v;saveDB();closeModal();renderMain();
+  var key=S.mbBudgetKey||S.mbCatId;
+  DB.budgets[key]=v;saveDB();closeModal();renderMain();
 };
 function delTxn(){DB.txns=DB.txns.filter(function(t){return t.id!==S.mEditId;});saveDB();closeModal();render();};
 function delCat(){DB.cats=DB.cats.filter(function(c){return c.id!==S.mcEditId;});saveDB();closeModal();renderMain();};
@@ -1164,7 +1258,7 @@ function modalBudget(){
   h+='<label class="flabel">Лимит на период (₸)</label>';
   h+='<input class="finp" type="number" inputmode="decimal" placeholder="Например: 50000" value="'+esc(S.mbVal)+'" oninput="S.mbVal=this.value">';
   h+='<button class="btn-primary" onclick="submitBudget()">Сохранить</button>';
-  if(DB.budgets[S.mbCatId])h+='<button class="btn-ghost" onclick="DB.budgets[S.mbCatId]=0;saveDB();closeModal();renderMain()">Убрать лимит</button>';
+  if(DB.budgets[S.mbBudgetKey]||DB.budgets[S.mbCatId])h+='<button class="btn-ghost" onclick="delete DB.budgets[S.mbBudgetKey];saveDB();closeModal();renderMain()">Убрать лимит</button>';
   h+='<button class="btn-ghost" onclick="closeModal()">Отмена</button>';
   return h;
 }
