@@ -217,7 +217,7 @@ svg.chart{width:100%;display:block}
 </style>
 
 <script>
-// Inline stubs - available immediately for onclick handlers
+// ── AUTH FUNCTIONS (defined early so HTML onclick works) ──────────────────
 function switchTab(t){
   var lf=document.getElementById('loginForm');
   var rf=document.getElementById('regForm');
@@ -228,11 +228,27 @@ function switchTab(t){
   if(rf)rf.style.display=t==='reg'?'block':'none';
   if(tl)tl.className='auth-tab'+(t==='login'?' active':'');
   if(tr)tr.className='auth-tab'+(t==='reg'?' active':'');
-  if(ae){ae.style.display='none';ae.textContent='';}
+  if(ae){ae.textContent='';ae.style.display='none';}
 }
-function _hashStr(s){var h=0,i,c;for(i=0;i<s.length;i++){c=s.charCodeAt(i);h=((h<<5)-h)+c;h|=0;}return String(h);}
-function _showErr(msg){var el=document.getElementById('authErr');if(el){el.textContent=msg;el.style.display='block';}}
-function _waitDB(fn){if(window._db)fn();else setTimeout(function(){_waitDB(fn);},200);}
+
+function _showErr(msg){
+  var el=document.getElementById('authErr');
+  if(el){el.textContent=msg;el.style.display='block';}
+}
+
+function _hashStr(s){
+  var h=0,i,c;
+  for(i=0;i<s.length;i++){c=s.charCodeAt(i);h=((h<<5)-h)+c;h|=0;}
+  return String(h);
+}
+
+function _waitDB(fn,attempts){
+  attempts=attempts||0;
+  if(attempts>30){_showErr('Нет соединения с Firebase. Откройте через GitHub Pages.');return;}
+  if(window._db){fn();}
+  else{setTimeout(function(){_waitDB(fn,attempts+1);},300);}
+}
+
 function doLogin(){
   var u=(document.getElementById('loginUser').value||'').trim().toLowerCase();
   var p=document.getElementById('loginPass').value||'';
@@ -240,20 +256,24 @@ function doLogin(){
   var btn=document.querySelector('#loginForm .auth-btn');
   if(btn){btn.textContent='Входим...';btn.disabled=true;}
   _waitDB(function(){
-    window._db.collection('users').doc(u).get().then(function(doc){
-      if(btn){btn.textContent='Войти';btn.disabled=false;}
-      if(!doc.exists){_showErr('Пользователь не найден');return;}
-      var data=doc.data();
-      if(data.hash!==_hashStr(p)){_showErr('Неверный пароль');return;}
-      window._CU=u;
-      try{localStorage.setItem('tsf_session',JSON.stringify({user:u,name:data.name}));}catch(e){}
-      if(window._appReady)window._appReady(data.name);
-    }).catch(function(e){
-      if(btn){btn.textContent='Войти';btn.disabled=false;}
-      _showErr('Ошибка: '+e.message);
-    });
+    window._db.collection('users').doc(u).get()
+      .then(function(doc){
+        if(btn){btn.textContent='Войти';btn.disabled=false;}
+        if(!doc.exists){_showErr('Пользователь не найден. Зарегистрируйтесь.');return;}
+        var d=doc.data();
+        if(d.hash!==_hashStr(p)){_showErr('Неверный пароль');return;}
+        window._CU=u;
+        try{localStorage.setItem('tsf_session',JSON.stringify({user:u,name:d.name}));}catch(e){}
+        if(window._appReady)window._appReady(d.name);
+        else{setTimeout(function(){if(window._appReady)window._appReady(d.name);},500);}
+      })
+      .catch(function(e){
+        if(btn){btn.textContent='Войти';btn.disabled=false;}
+        _showErr('Ошибка: '+e.message);
+      });
   });
 }
+
 function doRegister(){
   var u=(document.getElementById('regUser').value||'').trim().toLowerCase();
   var p=document.getElementById('regPass').value||'';
@@ -264,28 +284,34 @@ function doRegister(){
   var btn=document.querySelector('#regForm .auth-btn');
   if(btn){btn.textContent='Создаём...';btn.disabled=true;}
   _waitDB(function(){
-    window._db.collection('users').doc(u).get().then(function(doc){
-      if(doc.exists){
-        if(btn){btn.textContent='Создать аккаунт';btn.disabled=false;}
-        _showErr('Этот логин уже занят');return;
-      }
-      window._db.collection('users').doc(u).set({
-        name:n,hash:_hashStr(p),created:Date.now()
-      }).then(function(){
+    window._db.collection('users').doc(u).get()
+      .then(function(doc){
+        if(doc.exists){
+          if(btn){btn.textContent='Создать аккаунт';btn.disabled=false;}
+          _showErr('Этот логин уже занят');
+          return;
+        }
+        return window._db.collection('users').doc(u).set({
+          name:n,
+          hash:_hashStr(p),
+          created:Date.now()
+        });
+      })
+      .then(function(r){
+        if(r===undefined)return; // was 'login already taken' branch
         if(btn){btn.textContent='Создать аккаунт';btn.disabled=false;}
         window._CU=u;
         try{localStorage.setItem('tsf_session',JSON.stringify({user:u,name:n}));}catch(e){}
         if(window._appReady)window._appReady(n);
-      }).catch(function(e){
+        else{setTimeout(function(){if(window._appReady)window._appReady(n);},500);}
+      })
+      .catch(function(e){
         if(btn){btn.textContent='Создать аккаунт';btn.disabled=false;}
-        _showErr('Ошибка записи: '+e.message);
+        _showErr('Ошибка Firebase: '+e.message);
       });
-    }).catch(function(e){
-      if(btn){btn.textContent='Создать аккаунт';btn.disabled=false;}
-      _showErr('Ошибка: '+e.message);
-    });
   });
 }
+
 function doLogout(){
   try{localStorage.removeItem('tsf_session');}catch(e){}
   window._CU=null;
@@ -338,7 +364,11 @@ function doLogout(){
       <button class="auth-btn" onclick="doRegister()">Создать аккаунт</button>
     </div>
     <div class="auth-err" id="authErr"></div>
-    <div class="auth-note">
+    <div id="localFileWarning" style="display:none;background:rgba(255,184,77,.1);border:1px solid rgba(255,184,77,.3);border-radius:10px;padding:12px;font-size:12px;color:#ffb84d;margin-bottom:16px;text-align:center">
+  ⚠️ Открыт как локальный файл.<br>
+  Для входа откройте через <b>GitHub Pages</b>
+</div>
+<div class="auth-note">
       💡 Данные хранятся локально + синхронизируются через общий ключ.<br>
       Используйте один логин на всех устройствах.
     </div>
@@ -372,13 +402,22 @@ var firebaseConfig = {
 var firebaseApp=null,db=null,FIREBASE_READY=false;
 function initFirebase(){
   try{
-    if(firebaseConfig.apiKey==="YOUR_API_KEY"){return;}
-    firebaseApp=firebase.initializeApp(firebaseConfig);
+    if(typeof firebase==='undefined'){
+      console.error('Firebase SDK not loaded');return;
+    }
+    if(firebaseConfig.apiKey==="YOUR_API_KEY"){
+      console.warn('Firebase not configured');return;
+    }
+    if(!firebase.apps||!firebase.apps.length){
+      firebase.initializeApp(firebaseConfig);
+    }
     db=firebase.firestore();
-    window._db=db; // share with auth stubs
+    window._db=db;
     FIREBASE_READY=true;
-    console.log("Firebase OK");
-  }catch(e){console.log("Firebase err:",e.message);}
+    console.log('Firebase ready');
+  }catch(e){
+    console.error('Firebase init error:',e);
+  }
 }
 function syncToCloud(){
   if(!FIREBASE_READY||!CURRENT_USER)return;
@@ -1322,6 +1361,7 @@ function render(){renderSidebar();renderMobNav();renderMain();}
 // INIT
 // ═══════════════════════════════
 function startApp(name){
+  window._appReady=startApp; // keep reference fresh
   if(window._CU) CURRENT_USER=window._CU;
   loadDB();
   var as=document.getElementById('authScreen');
@@ -1344,6 +1384,12 @@ var _savedName = checkAutoLogin();
 if(_savedName){
   window._CU = CURRENT_USER; // sync
   startApp(_savedName);
+}
+
+// Detect local file
+if(window.location.protocol==='file:'){
+  var w=document.getElementById('localFileWarning');
+  if(w)w.style.display='block';
 }
 
 // Enter key on auth
