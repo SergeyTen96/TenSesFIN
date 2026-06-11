@@ -97,8 +97,8 @@ a{color:inherit;text-decoration:none}
 .payment-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
 .payment-card{background:#16161f;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px}
 .payment-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;align-self:flex-start}
-.badge-kaspi{background:rgba(232,56,42,.12);color:#e8382a}
-.badge-freedom{background:rgba(0,180,100,.12);color:#00b464}
+.badge-kaspi{background:rgba(255,133,160,.12);color:#ff85a0}
+.badge-freedom{background:rgba(62,207,122,.12);color:#3ecf7a}
 .badge-income{background:rgba(0,212,160,.12);color:#00d4a0}
 .payment-amount{font-size:20px;font-weight:700;letter-spacing:-.5px}
 .payment-sub{font-size:11px;color:#555570}
@@ -439,80 +439,7 @@ function doLogout(){
   CURRENT_USER=null;
   document.getElementById('authScreen').style.display='flex';
   document.getElementById('appScreen').className='app';
-}// Users registry (stored without namespace — global)
-function getUsers(){ return lsGet('tsf_users', {}); }
-function saveUsers(u){ lsSet('tsf_users', u); }
-
-function hashStr(s){
-  // Simple hash for password storage
-  var h=0,i,c;
-  for(i=0;i<s.length;i++){ c=s.charCodeAt(i); h=((h<<5)-h)+c; h|=0; }
-  return String(h);
 }
-
-// Auto-login
-function checkAutoLogin(){
-  var saved = lsGet('tsf_session', null);
-  if(saved && saved.user){
-    var users = getUsers();
-    if(users[saved.user]){
-      CURRENT_USER = saved.user;
-      return true;
-    }
-  }
-  return false;
-}
-
-function switchTab(tab){
-  document.getElementById('loginForm').style.display = tab==='login'?'block':'none';
-  document.getElementById('regForm').style.display = tab==='reg'?'block':'none';
-  document.getElementById('tabLogin').className = 'auth-tab'+(tab==='login'?' active':'');
-  document.getElementById('tabReg').className = 'auth-tab'+(tab==='reg'?' active':'');
-  document.getElementById('authErr').style.display='none';
-};
-
-function doLogin(){
-  var u = (document.getElementById('loginUser').value||'').trim().toLowerCase();
-  var p = document.getElementById('loginPass').value||'';
-  if(!u||!p){ showAuthErr('Заполните все поля'); return; }
-  var users = getUsers();
-  if(!users[u]){ showAuthErr('Пользователь не найден'); return; }
-  if(users[u].hash !== hashStr(p)){ showAuthErr('Неверный пароль'); return; }
-  CURRENT_USER = u;
-  lsSet('tsf_session', {user:u});
-  startApp(users[u].name);
-};
-
-function doRegister(){
-  var u = (document.getElementById('regUser').value||'').trim().toLowerCase();
-  var p = document.getElementById('regPass').value||'';
-  var n = (document.getElementById('regName').value||'').trim();
-  if(!u||!p||!n){ showAuthErr('Заполните все поля'); return; }
-  if(u.length<3){ showAuthErr('Логин минимум 3 символа'); return; }
-  if(p.length<4){ showAuthErr('Пароль минимум 4 символа'); return; }
-  var users = getUsers();
-  if(users[u]){ showAuthErr('Этот логин уже занят'); return; }
-  users[u] = {name:n, hash:hashStr(p), created:Date.now()};
-  saveUsers(users);
-  // Init default categories
-  lsSet(ukey('cats'), null); // will use default
-  CURRENT_USER = u;
-  lsSet('tsf_session', {user:u});
-  startApp(n);
-};
-
-function showAuthErr(msg){
-  var el=document.getElementById('authErr');
-  el.textContent=msg; el.style.display='block';
-}
-
-function doLogout(){
-  lsSet('tsf_session', null);
-  CURRENT_USER = null;
-  document.getElementById('authScreen').style.display='flex';
-  document.getElementById('appScreen').className='app';
-};
-
 // ═══════════════════════════════
 // DB
 // ═══════════════════════════════
@@ -713,12 +640,22 @@ function donut(slices,sz){
   sz=sz||160;var cx=sz/2,cy=sz/2,R=sz*.4,r=sz*.25;
   var total=0;slices.forEach(function(s){total+=s.value;});
   if(!total)return '';
-  var angle=-Math.PI/2;
   var uid='donut_'+Date.now();
-  var s='<svg width="'+sz+'" height="'+sz+'" id="'+uid+'" style="overflow:hidden;display:block">';
-  slices.forEach(function(sl,si){
+  var s='<svg width="'+sz+'" height="'+sz+'" id="'+uid+'" style="overflow:visible;display:block">';
+  // Single slice — draw two concentric circles (full ring)
+  if(slices.length===1){
+    var sl=slices[0];
+    var pct=100;
+    s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="'+sl.color+'" opacity="0.9"/>';
+    s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="#12121e"/>';
+    s+='<title>'+esc(sl.name)+': \u20b8'+fmt(sl.value)+' (100%)</title>';
+    s+='</svg>';
+    return s;
+  }
+  var angle=-Math.PI/2;
+  slices.forEach(function(sl){
     var a=sl.value/total*Math.PI*2;
-    if(a<0.01){angle+=a;return;}
+    if(a<0.005){angle+=a;return;}
     var x1=cx+R*Math.cos(angle),y1=cy+R*Math.sin(angle);
     var x2=cx+R*Math.cos(angle+a),y2=cy+R*Math.sin(angle+a);
     var ix1=cx+r*Math.cos(angle),iy1=cy+r*Math.sin(angle);
@@ -795,7 +732,7 @@ var S={
   tab:'home',modal:null,
   dPeriod:'salary',dCs:todayStr(),dCe:todayStr(),dSalaryOffset:0,
   oFilter:'all',oSearch:'',oPeriod:'salary',oSalaryOffset:0,oCs:todayStr(),oCe:todayStr(),
-  aPeriod:'salary',aCs:todayStr(),aCe:todayStr(),aRange:29,aRangeStart:0,aRangeEnd:27,aSalaryOffset:0,
+  aPeriod:'salary',aCs:todayStr(),aCe:todayStr(),aRange:29,aRangeStart:0,aRangeEnd:29,aSalaryOffset:0,
   bPeriod:'salary',bCs:todayStr(),bCe:todayStr(),bSalaryOffset:0,
   dragIdx:null,dragOver:null,
   mType:'expense',mAmt:'',mCatId:'',mPayment:'kaspi',mDate:todayStr(),mDateQ:'today',mNote:'',mIncCat:'salary',mEditId:null,
@@ -846,7 +783,7 @@ function pageDashboard(){
   h+='<div class="section-label">По картам</div>';
   h+='<div class="payment-grid">';
   h+='<div class="payment-card"><span class="payment-badge badge-kaspi">🔴 Kaspi</span><div class="payment-amount">₸'+fmt(kaspiAmt)+'</div><div class="payment-sub">'+kaspiCnt+' операций</div></div>';
-  h+='<div class="payment-card"><span class="payment-badge badge-freedom">🟢 Freedom</span><div class="payment-amount" style="color:#00b464">₸'+fmt(freeAmt)+'</div><div class="payment-sub">'+freeCnt+' операций</div></div>';
+  h+='<div class="payment-card"><span class="payment-badge badge-freedom">🟢 Freedom</span><div class="payment-amount" style="color:#3ecf7a">₸'+fmt(freeAmt)+'</div><div class="payment-sub">'+freeCnt+' операций</div></div>';
   h+='</div>';
 
 
@@ -951,73 +888,84 @@ function pageAnalytics(){
   var kaspiAmt=exp.filter(function(t){return t.payment==='kaspi';}).reduce(function(s,t){return s+t.amount;},0);
   var freeAmt=exp.filter(function(t){return t.payment==='freedom';}).reduce(function(s,t){return s+t.amount;},0);
   var allDays=buildDays(30);
-  var startIdx=Math.min(S.aRangeStart, S.aRangeEnd-1);
-  var endIdx=Math.max(S.aRangeStart+1, S.aRangeEnd);
-  var chartDays=allDays.slice(startIdx, endIdx+1);
+  var MAX=allDays.length-1;
+  var startIdx=Math.max(0,Math.min(S.aRangeStart,MAX-1));
+  var endIdx=Math.max(startIdx+1,Math.min(S.aRangeEnd,MAX));
+  var chartDays=allDays.slice(startIdx,endIdx+1);
+  var pctStart=MAX>0?(startIdx/MAX*100):0;
 
   var h='<div class="page-title">Аналитика</div>';
   h+=periodWidget(S.aPeriod,S.aCs,S.aCe,'a',S.aSalaryOffset);
   h+='<div class="grid4">';
   [{l:'Доходы',v:'₸'+fmt(totalI),s:inc.length+' оп.',c:'#00d4a0'},
    {l:'Расходы',v:'₸'+fmt(totalE),s:exp.length+' оп.',c:'#ff5c7a'},
-   {l:'Kaspi',v:'₸'+fmt(kaspiAmt),s:exp.filter(function(t){return t.payment==='kaspi';}).length+' оп.',c:'#e8382a'},
-   {l:'Freedom',v:'₸'+fmt(freeAmt),s:exp.filter(function(t){return t.payment==='freedom';}).length+' оп.',c:'#00b464'}
+   {l:'Kaspi',v:'₸'+fmt(kaspiAmt),s:exp.filter(function(t){return t.payment==='kaspi';}).length+' оп.',c:'#ff85a0'},
+   {l:'Freedom',v:'₸'+fmt(freeAmt),s:exp.filter(function(t){return t.payment==='freedom';}).length+' оп.',c:'#3ecf7a'}
   ].forEach(function(s){
     h+='<div class="card"><div class="stat-label">'+s.l+'</div><div class="stat-val" style="color:'+s.c+'">'+s.v+'</div><div class="stat-sub">'+s.s+'</div></div>';
   });
   h+='</div>';
 
-  // Kaspi vs Freedom bar chart with draggable sliders and click-to-detail panel
-  h+='<div class="chart-wrap" id="kvfWrap">';
-  h+='<div class="chart-title">Kaspi vs Freedom <small>'+chartDays.length+' дн.</small></div>';
-  h+='<div style="display:flex;gap:12px;align-items:flex-start">';
-  h+='<div style="flex:1;min-width:0">';
-  h+=barChart(chartDays,['kaspi','freedom'],['#e8382a','#00b464'],160,'showBarDetail');
-  h+='</div>';
-  h+='<div id="barDetailPanel" style="display:none;min-width:160px;max-width:190px;background:#1a1a28;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;flex-shrink:0">';
-  h+='<div id="barDetailContent"></div>';
-  h+='</div>';
+  // Расходы по дням + выпадающий список категорий + ползунок
+  var selCat = S.aChartCat || null;
+  var selCatObj = selCat ? (DB.cats.find(function(x){return x.id===selCat;})||null) : null;
+  var chartColor = selCatObj ? selCatObj.color : '#ff5c7a';
+  // Пересчитать данные по выбранной категории
+  var filteredDays = chartDays.map(function(d){
+    var amt = exp.filter(function(t){
+      return t.date===d.date && (!selCat || t.catId===selCat);
+    }).reduce(function(s,t){return s+t.amount;},0);
+    return Object.assign({},d,{exp:amt});
+  });
+
+  h+='<div class="chart-wrap">';
+  // Заголовок + дропдаун в одной строке
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+  h+='<div class="chart-title" style="margin-bottom:0">Расходы по дням <small>'+chartDays.length+' дн.</small></div>';
+  // Кастомный select через <select>
+  h+='<select onchange="S.aChartCat=this.value||null;renderMain()" style="background:#1e1e2e;color:#f0f0ff;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;outline:none;max-width:140px">';
+  h+='<option value="" '+(selCat===null?'selected':'')+'>Все категории</option>';
+  DB.cats.forEach(function(cat){
+    h+='<option value="'+cat.id+'" '+(selCat===cat.id?'selected':'')+'>'+cat.icon+' '+esc(cat.name)+'</option>';
+  });
+  h+='</select>';
   h+='</div>';
 
+  h+=lineChart(filteredDays,['exp'],[chartColor],130);
+  h+='<div class="legend"><div class="legend-item"><div class="legend-dot" style="background:'+chartColor+'"></div>'+(selCatObj?(selCatObj.icon+' '+esc(selCatObj.name)):'Все расходы')+'</div></div>';
+  // Два ползунка: начало и конец диапазона
+  var pctEnd=MAX>0?(endIdx/MAX*100):100;
   h+='<div style="margin-top:14px">';
-  h+='<div style="font-size:11px;color:#555570;margin-bottom:8px;display:flex;justify-content:space-between"><span>Начало: <b style="color:#f0f0ff">'+(chartDays[0]&&chartDays[0].label||'')+'</b></span><span>Конец: <b style="color:#f0f0ff">'+(chartDays[chartDays.length-1]&&chartDays[chartDays.length-1].label||'')+'</b></span></div>';
-
-  // Draggable range slider — Start
+  h+='<div style="font-size:11px;color:#555570;margin-bottom:8px;display:flex;justify-content:space-between">';
+  h+='<span>С: <b style="color:#f0f0ff">'+(chartDays[0]&&chartDays[0].label||'')+'</b></span>';
+  h+='<span>По: <b style="color:#f0f0ff">'+(chartDays[chartDays.length-1]&&chartDays[chartDays.length-1].label||'')+'</b> <span style="color:#444460">('+chartDays.length+' дн.)</span></span>';
+  h+='</div>';
+  // Ползунок Начало
   h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">';
-  h+='<span style="font-size:10px;color:#e8382a;min-width:32px;font-weight:700">Нач.</span>';
-  h+='<div class="drag-slider-track" id="sliderStart" style="flex:1;position:relative;height:20px;cursor:pointer" data-which="start" data-val="'+S.aRangeStart+'">';
-  var pctStart=S.aRangeStart/27*100;
+  h+='<span style="font-size:10px;color:#ff5c7a;min-width:32px;font-weight:700">Нач.</span>';
+  h+='<div class="drag-slider-track" id="sliderStart" style="flex:1;position:relative;height:24px;cursor:pointer" data-which="start" data-max="'+MAX+'">';
   h+='<div style="position:absolute;top:50%;transform:translateY(-50%);left:0;right:0;height:4px;background:#1e1e2e;border-radius:2px"></div>';
-  h+='<div style="position:absolute;top:50%;transform:translateY(-50%);left:0;width:'+pctStart+'%;height:4px;background:#e8382a;border-radius:2px"></div>';
-  h+='<div class="drag-slider-thumb" style="position:absolute;top:50%;left:'+pctStart+'%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#e8382a;border:2px solid #fff;box-shadow:0 2px 8px rgba(232,56,42,.5);touch-action:none"></div>';
+  h+='<div style="position:absolute;top:50%;transform:translateY(-50%);left:0;width:'+pctStart+'%;height:4px;background:#ff5c7a;border-radius:2px"></div>';
+  h+='<div class="drag-slider-thumb" style="position:absolute;top:50%;left:'+pctStart+'%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:#ff5c7a;border:2px solid #fff;box-shadow:0 2px 8px rgba(255,92,122,.5);touch-action:none"></div>';
   h+='</div>';
-  h+='<span style="font-size:11px;color:#9090b0;min-width:24px;text-align:right">'+S.aRangeStart+'</span>';
   h+='</div>';
-
-  // Draggable range slider — End
+  // Ползунок Конец
   h+='<div style="display:flex;gap:8px;align-items:center">';
-  h+='<span style="font-size:10px;color:#00b464;min-width:32px;font-weight:700">Кон.</span>';
-  h+='<div class="drag-slider-track" id="sliderEnd" style="flex:1;position:relative;height:20px;cursor:pointer" data-which="end" data-val="'+S.aRangeEnd+'">';
-  var pctEnd=S.aRangeEnd/27*100;
+  h+='<span style="font-size:10px;color:#a0a0c8;min-width:32px;font-weight:700">Кон.</span>';
+  h+='<div class="drag-slider-track" id="sliderEnd" style="flex:1;position:relative;height:24px;cursor:pointer" data-which="end" data-max="'+MAX+'">';
   h+='<div style="position:absolute;top:50%;transform:translateY(-50%);left:0;right:0;height:4px;background:#1e1e2e;border-radius:2px"></div>';
-  h+='<div style="position:absolute;top:50%;transform:translateY(-50%);left:0;width:'+pctEnd+'%;height:4px;background:#00b464;border-radius:2px"></div>';
-  h+='<div class="drag-slider-thumb" style="position:absolute;top:50%;left:'+pctEnd+'%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#00b464;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,180,100,.5);touch-action:none"></div>';
-  h+='</div>';
-  h+='<span style="font-size:11px;color:#9090b0;min-width:24px;text-align:right">'+S.aRangeEnd+'</span>';
+  h+='<div style="position:absolute;top:50%;transform:translateY(-50%);left:0;width:'+pctEnd+'%;height:4px;background:#a0a0c8;border-radius:2px"></div>';
+  h+='<div class="drag-slider-thumb" style="position:absolute;top:50%;left:'+pctEnd+'%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:#a0a0c8;border:2px solid #fff;box-shadow:0 2px 8px rgba(160,160,200,.4);touch-action:none"></div>';
   h+='</div>';
   h+='</div>';
-  h+='<div class="legend" style="margin-top:8px"><div class="legend-item"><div class="legend-dot" style="background:#e8382a"></div>Kaspi</div><div class="legend-item"><div class="legend-dot" style="background:#00b464"></div>Freedom</div></div>';
-  h+='</div>';
+  h+='</div></div>';
 
-  // Store chartDays for click handler
-  h+='<script>window._chartDays='+JSON.stringify(chartDays)+';<\/script>';
-
-  h+='<div class="chart-wrap"><div class="chart-title">Расходы по дням</div>';
-  h+=lineChart(chartDays,['exp'],['#ff5c7a'],130);
-  h+='<div class="legend"><div class="legend-item"><div class="legend-dot" style="background:#ff5c7a"></div>Расходы</div></div></div>';
-
+  // По категориям
   var catMap={};exp.forEach(function(t){catMap[t.catId]=(catMap[t.catId]||0)+t.amount;});
-  var slices=Object.keys(catMap).map(function(id){var c=DB.cats.find(function(x){return x.id===id;})||{color:'#9090b0',name:'Прочее'};return{color:c.color,name:c.name,value:catMap[id],id:id};}).sort(function(a,b){return b.value-a.value;});
+  var slices=Object.keys(catMap).map(function(id){
+    var c=DB.cats.find(function(x){return x.id===id;})||{color:'#9090b0',name:'Прочее'};
+    return{color:c.color,name:c.name,value:catMap[id],id:id};
+  }).sort(function(a,b){return b.value-a.value;});
   if(slices.length){
     h+='<div class="chart-wrap"><div class="chart-title">По категориям</div>';
     h+='<div style="display:flex;justify-content:center;margin-bottom:12px">'+donut(slices,180)+'</div>';
@@ -1041,7 +989,12 @@ function pageBudget(){
   var _bsp=salaryPeriod(S.bSalaryOffset);
   var _bPeriodKey=S.bPeriod==='salary'?(_bsp.start+'_'+_bsp.end):'all';
   var txns=filterTxns(DB.txns,S.bPeriod,S.bCs,S.bCe,S.bSalaryOffset).filter(function(t){return t.payment!=='income';});
-  var catSpend={};txns.forEach(function(t){catSpend[t.catId]=(catSpend[t.catId]||0)+t.amount;});
+  var catSpend={},catKaspi={},catFreedom={};
+  txns.forEach(function(t){
+    catSpend[t.catId]=(catSpend[t.catId]||0)+t.amount;
+    if(t.payment==='kaspi')   catKaspi[t.catId]=(catKaspi[t.catId]||0)+t.amount;
+    if(t.payment==='freedom') catFreedom[t.catId]=(catFreedom[t.catId]||0)+t.amount;
+  });
   var totalSpent=txns.reduce(function(s,t){return s+t.amount;},0);
   var totalBudget=DB.cats.reduce(function(s,c){
     var bk=(_bPeriodKey!=='all')?(c.id+'_'+_bPeriodKey):c.id;
@@ -1060,28 +1013,48 @@ function pageBudget(){
     h+='<div class="bud-prog"><div class="bud-fill" style="width:'+pct2+'%;background:'+(totalSpent>totalBudget?'#ff5c7a':pct2>80?'#ffb84d':'#00d4a0')+'"></div></div>';
     h+='<div style="font-size:12px;color:#555570;text-align:right;margin-top:4px">'+(totalSpent>totalBudget?'⚠️ Превышен на ₸'+fmt(totalSpent-totalBudget):'Остаток: ₸'+fmt(totalBudget-totalSpent))+'</div>';
   }
-  h+='</div><div style="font-size:11px;color:#444460;margin-bottom:10px">Нажмите на категорию чтобы задать лимит</div>';
+  h+='</div>';
+  h+='<div style="font-size:11px;color:#444460;margin-bottom:10px">Нажмите на категорию чтобы задать лимит</div>';
   DB.cats.forEach(function(cat){
     var _bk=(_bPeriodKey!=='all')?cat.id+'_'+_bPeriodKey:cat.id;
-    var limit=DB.budgets[_bk]||0,spent=catSpend[cat.id]||0;
-    var pct=limit?Math.min(Math.round(spent/limit*100),100):0,over=limit>0&&spent>limit;
+    var limit=DB.budgets[_bk]||0;
+    var spent=catSpend[cat.id]||0;
+    var kaspi=catKaspi[cat.id]||0;
+    var freedom=catFreedom[cat.id]||0;
+    var pct=limit?Math.min(Math.round(spent/limit*100),100):0;
+    var over=limit>0&&spent>limit;
     var bc=over?'#ff5c7a':pct>80?'#ffb84d':cat.color;
     h+='<div class="bud-item'+(over?' over':'')+'" onclick="openBudget(\''+cat.id+'\')">';
     h+='<div class="bud-hd"><div style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700">'+cat.icon+' '+esc(cat.name)+'</div>';
     h+=(over?'<span class="over-tag">⚠️ Превышен</span>':'<span style="font-size:13px;font-weight:700;color:'+(pct>80?'#ffb84d':'#666688')+'">'+(limit?pct+'%':'—')+'</span>')+'</div>';
     h+='<div class="bud-prog"><div class="bud-fill" style="width:'+pct+'%;background:'+bc+'"></div></div>';
-    var остаток = limit - spent;
-  h+='<div class="bud-ft" style=\'display:flex;justify-content:space-between;gap:6px\'>';
-  h+='<span>Потрачено <b>₸'+fmt(spent)+'</b></span>';
-  if(limit > 0){
-    h+= остаток >= 0
-      ? '<span style=\'color:#00d4a0\'>Остаток <b>₸'+fmt(остаток)+'</b></span>'
-      : '<span style=\'color:#ff5c7a\'>Перерасход <b>₸'+fmt(Math.abs(остаток))+'</b></span>';
-    h+='<span>Лимит <b>₸'+fmt(limit)+'</b></span>';
-  } else {
-    h+='<span style=\'color:#6c63ff;font-weight:700\'>Задать лимит</span>';
-  }
-  h+='</div></div>';
+    // Строка расходов: итого + плашки Kaspi/Freedom
+    // Строка 1: Потрачено + Остаток рядом (gap ~16px)
+    var ostatk=limit-spent;
+    h+='<div style="display:flex;align-items:center;gap:16px;margin-top:5px;flex-wrap:wrap">';
+    h+='<span style="font-size:12px;color:#9090b0">Потрачено: <b style="color:#f0f0ff">₸'+fmt(spent)+'</b></span>';
+    if(limit>0){
+      h+=ostatk>=0
+        ?'<span style="font-size:12px;color:#00d4a0">Остаток <b>₸'+fmt(ostatk)+'</b></span>'
+        :'<span style="font-size:12px;color:#ff5c7a">Перерасход <b>₸'+fmt(Math.abs(ostatk))+'</b></span>';
+    } else {
+      h+='<span style="font-size:11px;color:#6c63ff;font-weight:700">Задать лимит</span>';
+    }
+    h+='</div>';
+    // Строка 2: плашки + лимит слева под ними
+    if(spent>0||limit>0){
+      h+='<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:4px;gap:6px">';
+      // Слева: плашки Kaspi / Freedom
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      if(kaspi>0)   h+='<span style="font-size:11px;background:rgba(255,133,160,.15);color:#ff85a0;border-radius:6px;padding:2px 8px;font-weight:700">● Kaspi ₸'+fmt(kaspi)+'</span>';
+      if(freedom>0) h+='<span style="font-size:11px;background:rgba(62,207,122,.15);color:#3ecf7a;border-radius:6px;padding:2px 8px;font-weight:700">● Freedom ₸'+fmt(freedom)+'</span>';
+      if(!kaspi&&!freedom) h+='<span></span>';
+      h+='</div>';
+      // Справа: лимит
+      if(limit>0) h+='<span style="font-size:11px;color:#555570;white-space:nowrap;flex-shrink:0">Лимит ₸'+fmt(limit)+'</span>';
+      h+='</div>';
+    }
+    h+='</div>';
   });
   return h;
 }
@@ -1127,10 +1100,15 @@ function pageSettings(){
 // DRAG
 // ═══════════════════════════════
 function setAStart(v){
-  if(v < S.aRangeEnd){ S.aRangeStart=v; renderMain(); }
+  v=Math.max(0,Math.min(28,v));
+  S.aRangeStart=v;
+  renderMain();
 }
 function setAEnd(v){
-  if(v > S.aRangeStart){ S.aRangeEnd=v; renderMain(); }
+  var MAX=29;
+  v=Math.max(S.aRangeStart+1,Math.min(MAX,v));
+  S.aRangeEnd=v;
+  renderMain();
 }
 
 // Bar click detail panel
@@ -1148,14 +1126,14 @@ function showBarDetail(idx){
   var h='<div style="font-size:11px;font-weight:700;color:#9090b0;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">'+day.full+'</div>';
   if(!txns.length){h+='<div style="font-size:12px;color:#444460;text-align:center;padding:10px 0">Нет расходов</div>';content.innerHTML=h;panel.style.display='';return;}
   if(day.kaspi){
-    h+='<div style="font-size:11px;font-weight:700;color:#e8382a;margin-bottom:5px">🔴 Kaspi</div>';
-    kaspiTxns.forEach(function(t){var c=getCat(t.catId);h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+c.icon+' '+esc(c.name)+(t.note?'<br><span style="font-size:10px;color:#555570">'+esc(t.note)+'</span>':'')+'</span><span style="font-size:12px;font-weight:700;color:#ff5c7a;flex-shrink:0">₸'+fmt(t.amount)+'</span></div>';});
-    h+='<div style="border-top:1px solid rgba(255,255,255,.06);padding-top:4px;margin-bottom:8px;display:flex;justify-content:space-between;font-size:11px;font-weight:700"><span style="color:#555570">Итого</span><span style="color:#e8382a">₸'+fmt(day.kaspi)+'</span></div>';
+    h+='<div style="font-size:11px;font-weight:700;color:#ff85a0;margin-bottom:5px">● Kaspi</div>';
+    kaspiTxns.forEach(function(t){var c=getCat(t.catId);h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+c.icon+' '+esc(c.name)+(t.note?'<br><span style="font-size:10px;color:#555570">'+esc(t.note)+'</span>':'')+'</span><span style="font-size:12px;font-weight:700;color:#ff85a0;flex-shrink:0">₸'+fmt(t.amount)+'</span></div>';});
+    h+='<div style="border-top:1px solid rgba(255,255,255,.06);padding-top:4px;margin-bottom:8px;display:flex;justify-content:space-between;font-size:11px;font-weight:700"><span style="color:#555570">Итого</span><span style="color:#ff85a0">₸'+fmt(day.kaspi)+'</span></div>';
   }
   if(day.freedom){
-    h+='<div style="font-size:11px;font-weight:700;color:#00b464;margin-bottom:5px">🟢 Freedom</div>';
-    freeTxns.forEach(function(t){var c=getCat(t.catId);h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+c.icon+' '+esc(c.name)+(t.note?'<br><span style="font-size:10px;color:#555570">'+esc(t.note)+'</span>':'')+'</span><span style="font-size:12px;font-weight:700;color:#00d4a0;flex-shrink:0">₸'+fmt(t.amount)+'</span></div>';});
-    h+='<div style="border-top:1px solid rgba(255,255,255,.06);padding-top:4px;display:flex;justify-content:space-between;font-size:11px;font-weight:700"><span style="color:#555570">Итого</span><span style="color:#00b464">₸'+fmt(day.freedom)+'</span></div>';
+    h+='<div style="font-size:11px;font-weight:700;color:#3ecf7a;margin-bottom:5px">● Freedom</div>';
+    freeTxns.forEach(function(t){var c=getCat(t.catId);h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+c.icon+' '+esc(c.name)+(t.note?'<br><span style="font-size:10px;color:#555570">'+esc(t.note)+'</span>':'')+'</span><span style="font-size:12px;font-weight:700;color:#3ecf7a;flex-shrink:0">₸'+fmt(t.amount)+'</span></div>';});
+    h+='<div style="border-top:1px solid rgba(255,255,255,.06);padding-top:4px;display:flex;justify-content:space-between;font-size:11px;font-weight:700"><span style="color:#555570">Итого</span><span style="color:#3ecf7a">₸'+fmt(day.freedom)+'</span></div>';
   }
   content.innerHTML=h;
   panel.style.display='';
@@ -1164,21 +1142,25 @@ function showBarDetail(idx){
 // Draggable custom sliders — attach after render
 function initDragSliders(){
   document.querySelectorAll('.drag-slider-track').forEach(function(track){
-    if(track._sliderInited) return;
-    track._sliderInited = true;
+    if(track._si) return;
+    track._si=true;
     var which=track.dataset.which;
-    function updateFromX(clientX){
-      var rect=track.getBoundingClientRect();
-      var pct=Math.max(0,Math.min(1,(clientX-rect.left)/rect.width));
-      var val=Math.round(pct*27);
+    var maxVal=parseInt(track.dataset.max||'29',10);
+    function applyPct(pct){
+      var fill=track.children[1];
+      var thumb=track.querySelector('.drag-slider-thumb');
+      if(fill)  fill.style.width=(pct*100)+'%';
+      if(thumb) thumb.style.left=(pct*100)+'%';
+    }
+    function updateX(cx){
+      var r=track.getBoundingClientRect();
+      var pct=Math.max(0,Math.min(1,(cx-r.left)/r.width));
+      applyPct(pct);
+      var val=Math.round(pct*maxVal);
       if(which==='start') setAStart(val);
       else setAEnd(val);
     }
-    function onMove(e){
-      e.preventDefault();
-      var cx=e.touches?e.touches[0].clientX:e.clientX;
-      updateFromX(cx);
-    }
+    function onMove(e){e.preventDefault();updateX(e.touches?e.touches[0].clientX:e.clientX);}
     function onUp(){
       document.removeEventListener('mousemove',onMove);
       document.removeEventListener('mouseup',onUp);
@@ -1186,16 +1168,13 @@ function initDragSliders(){
       document.removeEventListener('touchend',onUp);
     }
     function onDown(e){
-      e.preventDefault();
-      e.stopPropagation();
-      var cx=e.touches?e.touches[0].clientX:e.clientX;
-      updateFromX(cx);
+      e.preventDefault();e.stopPropagation();
+      updateX(e.touches?e.touches[0].clientX:e.clientX);
       document.addEventListener('mousemove',onMove);
       document.addEventListener('mouseup',onUp);
       document.addEventListener('touchmove',onMove,{passive:false});
       document.addEventListener('touchend',onUp);
     }
-    // Attach to both the track AND the thumb inside it
     track.addEventListener('mousedown',onDown);
     track.addEventListener('touchstart',onDown,{passive:false});
     var thumb=track.querySelector('.drag-slider-thumb');
